@@ -1,5 +1,5 @@
 """
-Interface of DNN models for image translations
+Interface of DNN models for low level vision tasks
 """
 import functools
 from abc import ABC

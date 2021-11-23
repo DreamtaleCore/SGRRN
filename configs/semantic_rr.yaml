@@ -1,0 +1,76 @@
+
+# logger options
+image_save_iter: 500          # How often do you want to save output images during training
+image_display_iter: 500       # How often do you want to display output images during training
+display_size: 16              # How many images do you want to display each time
+snapshot_save_iter: 10000     # How often do you want to save trained models
+snapshot_save_epoch: 1        # How often of epochs do you want to save trained models
+log_iter: 20                  # How often do you want to log the training stats
+test_iter: 5000               # How often do you want to log the training stats
+
+# optimization options
+n_epoch: 500                  # number of training epochs
+batch_size: 5                 # batch size
+weight_decay: 0.0001          # weight decay
+beta1: 0.9                    # Adam parameter
+beta2: 0.999                  # Adam parameter
+momentum: 0.9                 # SGD parameter
+init: kaiming                 # initialization [gaussian/kaiming/xavier/orthogonal]
+lr_g: 0.0002                  # initial learning rate
+lr_d: 0.0001                  # initial learning rate
+lr_policy: step               # learning rate scheduler
+step_size: 100000             # how often to decay learning rate
+gamma: 0.5                    # how much to decay learning rate
+vgg_w: 0.1                    # weight of perceptual loss
+gan_w: 0.01                   # weight of GAN loss, default is 0.01
+grad_w: 1.0                   # weight of gradient loss in discriminator
+bg_w: 0.5                     # weight of background loss
+rf_w: 0.25                    # weight of reflection loss
+pixel_w: 1.0                  # weight of pixel loss, i.e., L1, default is 1.0
+retina_w: 100.0               # weight of retina loss, i.e., Gradient loss, default is 1.0
+semantic_w: 1.0               # weight of semantic segmentation loss, i.e., CrossEntropy, default is 1.0
+batch_norm_mom: 0.0003        # batch norm for deeplab v3+
+
+# model options
+gen:
+  dim: 64                     # number of filters in the bottommost layer
+  activ: relu                 # activation function [relu/lrelu/prelu/selu/tanh]
+  n_downsample: 2             # number of downsampling layers in content encoder
+  n_res: 4                    # number of residual blocks in content encoder/decoder
+  pad_type: reflect           # padding type [zero/reflect]
+  norm: in                    # norm type [in/bn/none]
+  encoder_name: resnet101     # encoder name [vgg11/vgg19/resnet51/resnet101]
+  n_layer: 3                  # number of residual blocks in content encoder/decoder
+  pretrained: 1               # whether to use pretrained vgg [0/1]
+  decoder_mode: Basic+Channel+Pyramid+Guidance      # decoder mode: [Basic, +Channel, +Pyramid, +Guidance]
+  n_classes: 21               # number of semantic categories
+  res_scale: 0.1              # Residual scale in channel attention block
+  se_reduction: 8             # Squeeze-and-Excitation reduction weight
+  aspp:
+    input_channel: 2048       # ASPP module input channel
+    output_dim: 256           # ASPP module output channel
+    output_stride: 16         # output stride
+  shortcut:
+    dim: 48                   # shortcut connection dim
+    kernel: 1                 # shortcut connection kernel size
+dis:
+  dim: 64                     # number of filters in the bottommost layer
+  norm: none                  # normalization layer [none/bn/in/ln]
+  activ: lrelu                # activation function [relu/lrelu/prelu/selu/tanh]
+  n_layer: 2                  # number of layers in D
+  gan_type: lsgan             # GAN loss [lsgan/nsgan]
+  num_scales: 3               # number of scales
+  pad_type: reflect           # padding type [zero/reflect]
+  use_grad: 1                 # whether use gradient constraint[0/1]
+  use_wasserstein: 0          # is use wasserstein distance loss [0/1]
+
+# data options
+mode: semantic-rr                           # dataset mode
+input_dim: 3                                # number of image channels [1/3]
+output_dim_b: 3                             # number of image channels [1/3]
+output_dim_r: 3                             # number of image channels [1/3]
+num_workers: 8                              # number of data loading threads
+new_size: 350                               # first resize the shortest image side to this size
+crop_image_height: 256                      # random crop image of this height
+crop_image_width: 256                       # random crop image of this width
+data_root: /home/ros/ws/datasets/RRdataset/train     # dataset folder location

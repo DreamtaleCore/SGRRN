@@ -32,6 +32,15 @@ Material related to our paper is available via the following links:
 * One or more high-end NVIDIA GPUs with at least 8GB of DRAM.
 * NVIDIA driver 391.35 or newer, CUDA toolkit 9.0 or newer, cuDNN 7.3.1 or newer.
 
-## Using pre-trained networks and training
+## Training and Testing
 
-Comming soon!
+1. Train
+```python
+python train.py --config configs/semantic_rr.yaml --gpu_id 0
+```
+
+2. Test
+```python
+python test.py --config configs/semantic_rr.yaml --checkpoint <your/path> --input_dir your/data/path
+```
+

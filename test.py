@@ -1,32 +1,29 @@
-from __future__ import print_function
-
 from tqdm import tqdm
 
-from utils import get_config
-from trainer import MUID_Trainer, UID_Trainer
+from utils import get_config, label2colormap
+from trainer import Trainer
 import argparse
 from torch.autograd import Variable
-import torchvision.utils as vutils
-import sys
 import torch
 import os
-from torchvision import transforms
-from PIL import Image
+import cv2
+import numpy as np
+
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--configs', type=str, default='configs/intrinsic_MIT.yaml', help="net configuration")
-parser.add_argument('--input_dir', type=str, default='/home/ros/ws/nips19/datasets/intrinsic/MIT-inner-split/trainA',
+parser.add_argument('--config', type=str, default='configs/semantic_rr.yaml', help="net configuration")
+parser.add_argument('--checkpoint', type=str, default='checkpoints/outputs/semantic_rr-wo_adv/checkpoints/gen_148.pt',
+                    help="pwd of checkpoints")
+parser.add_argument('--input_dir', type=str, default='/home/ros/ws/dataset/RRdataset/test/input',
                     help="input image path")
-parser.add_argument('--output_folder', type=str, default='id_mit_train-inner-opt',
+parser.add_argument('--gt_bg_dir', type=str, default='/home/ros/ws/dataset/RRdataset/test/background',
+                    help="ground truth background image path")
+parser.add_argument('--gt_rf_dir', type=str, default='/home/ros/ws/dataset/RRdataset/test/reflection',
+                    help="ground truth reflection image path")
+parser.add_argument('--gt_sm_dir', type=str, default='/home/ros/ws/dataset/RRdataset/test/semantic',
+                    help="ground truth reflection image path")
+parser.add_argument('--output_dir', type=str, default='resutls/semantic_rr-127',
                     help="output image path")
-parser.add_argument('--checkpoint', type=str, default='checkpoints/mit_inner-opt/gen_00440000.pt',
-                    help="checkpoint of MUID")
-parser.add_argument('--seed', type=int, default=10, help="random seed")
-parser.add_argument('--num_style', type=int, default=1, help="number of styles to sample")
-parser.add_argument('--synchronized', action='store_true', help="whether use synchronized style code or not")
-parser.add_argument('--output_only', action='store_true', help="whether use synchronized style code or not")
-parser.add_argument('--output_path', type=str, default='.', help="path for logs, checkpoints, and VGG model weight")
-parser.add_argument('--trainer', type=str, default='MUID', help="MUID|UID")
 opts = parser.parse_args()
 
 IMG_EXTENSIONS = [
@@ -39,28 +36,16 @@ def is_image_file(filename):
     return any(filename.endswith(extension) for extension in IMG_EXTENSIONS)
 
 
-wo_fea = 'wo_fea' in opts.checkpoint
-
-
-torch.manual_seed(opts.seed)
-torch.cuda.manual_seed(opts.seed)
-if not os.path.exists(opts.output_folder):
-    os.makedirs(opts.output_folder)
+if not os.path.exists(opts.output_dir):
+    os.makedirs(opts.output_dir)
 
 # Load experiment setting
 config = get_config(opts.config)
 
-# Setup model and data loader
-# configs['vgg_model_path'] = opts.output_path
-# Setup model and data loader
-trainer = MUID_Trainer(config)
+trainer = Trainer(config)
 
 state_dict = torch.load(opts.checkpoint, map_location='cuda:0')
-trainer.gen_i.load_state_dict(state_dict['i'])
-trainer.gen_r.load_state_dict(state_dict['r'])
-trainer.gen_s.load_state_dict(state_dict['s'])
-trainer.fea_s.load_state_dict(state_dict['fs'])
-trainer.fea_m.load_state_dict(state_dict['fm'])
+trainer.generator.load_state_dict(state_dict['generator'])
 
 trainer.cuda()
 trainer.eval()
@@ -70,12 +55,7 @@ if 'new_size' in config:
 else:
     new_size = config['new_size_i']
 
-intrinsic_image_decompose = trainer.inference
-
 with torch.no_grad():
-    transform = transforms.Compose([transforms.Resize(new_size),
-                                    transforms.ToTensor(),
-                                    transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
 
     image_paths = os.listdir(opts.input_dir)
     image_paths = [x for x in image_paths if is_image_file(x)]
@@ -83,26 +63,39 @@ with torch.no_grad():
     t_bar.set_description('Processing')
     for image_name in t_bar:
         image_pwd = os.path.join(opts.input_dir, image_name)
+        image_base = image_name.split('.')[0]
 
-        out_root = os.path.join(opts.output_folder, image_name.split('.')[0])
-
-        if not os.path.exists(out_root):
-            os.makedirs(out_root)
-
-        image = Variable(transform(Image.open(image_pwd).convert('RGB')).unsqueeze(0).cuda())
+        img_in = cv2.imread(image_pwd)
+        tf_img_in = Variable(torch.from_numpy(np.transpose((img_in / 255. - 0.5) * 2, (2, 0, 1)))).float().cuda().unsqueeze(0)
 
         # Start testing
-        im_reflect, im_shading = intrinsic_image_decompose(image, wo_fea)
-        im_reflect = (im_reflect + 1) / 2.
-        im_shading = (im_shading + 1) / 2.
+        tf_pred_bg, tf_pred_rf, tf_pred_sm, _ = trainer.generator(tf_img_in)
+        
+        pred_bg = np.uint8(np.clip((tf_pred_bg / 2. + 0.5).cpu().squeeze().data.numpy().transpose((1, 2, 0)), 0, 1) * 255)
+        pred_rf = np.uint8(np.clip((tf_pred_rf / 2. + 0.5).cpu().squeeze().data.numpy().transpose((1, 2, 0)), 0, 1) * 255)
+        if tf_pred_sm is not None:
+            pred_sm = torch.argmax(tf_pred_sm[0], dim=0).detach().long().cpu().numpy()
+            pred_sm_color = label2colormap(pred_sm)[:, :, ::-1]
 
-        path_reflect = os.path.join(out_root, 'output_r.jpg')
-        path_shading = os.path.join(out_root, 'output_s.jpg')
+        cv2.imwrite(os.path.join(opts.output_dir, '{}-input.jpg'.format(image_base)), img_in)
+        cv2.imwrite(os.path.join(opts.output_dir, '{}-predict-background.jpg'.format(image_base)), pred_bg)
+        cv2.imwrite(os.path.join(opts.output_dir, '{}-predict-reflection.jpg'.format(image_base)), pred_rf)
+        if tf_pred_sm is not None:
+            cv2.imwrite(os.path.join(opts.output_dir, '{}-predict-semantic.jpg'.format(image_base)), pred_sm)
+            cv2.imwrite(os.path.join(opts.output_dir, '{}-predict-semantic-color.jpg'.format(image_base)), pred_sm_color)
 
-        vutils.save_image(im_reflect.data, path_reflect, padding=0, normalize=True)
-        vutils.save_image(im_shading.data, path_shading, padding=0, normalize=True)
+        if os.path.exists(os.path.join(opts.gt_bg_dir, image_name)):
+            img_gt = cv2.imread(os.path.join(opts.gt_bg_dir, image_name))
+            cv2.imwrite(os.path.join(opts.output_dir, "{}-label-background.jpg".format(image_base)), img_gt)
+        
+        if os.path.exists(os.path.join(opts.gt_rf_dir, image_name)):
+            img_gt = cv2.imread(os.path.join(opts.gt_bg_dir, image_name))
+            cv2.imwrite(os.path.join(opts.output_dir, "{}-label-reflection.jpg".format(image_base)), img_gt)
+        
+        if os.path.exists(os.path.join(opts.gt_sm_dir, image_name)):
+            img_gt = cv2.imread(os.path.join(opts.gt_sm_dir, image_name), 0)
+            img_gt_color = label2colormap(img_gt)[:, :, ::-1]
+            cv2.imwrite(os.path.join(opts.output_dir, "{}-label-semantic.png".format(image_base)), img_gt)
+            cv2.imwrite(os.path.join(opts.output_dir, "{}-label-semantic-color.jpg".format(image_base)), img_gt_color)
 
-        if not opts.output_only:
-            # also save input images
-            vutils.save_image(image.data, os.path.join(out_root, 'input.jpg'), padding=0, normalize=True)
-
+print('Done!')
